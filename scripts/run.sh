@@ -2,7 +2,6 @@
 set -euo pipefail
 
 # Usage: bash scripts/run.sh [design-directory] [Excel-file-in-psource]
-# The default workbook is psource/W4_power_2.xlsx.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DESIGN="${1:-$REPO_ROOT/HBFuse-2}"
@@ -10,9 +9,9 @@ DESIGN="$(cd "$DESIGN" && pwd)"
 DESIGN_NAME="$(basename "$DESIGN")"
 SOURCE_DIR="$REPO_ROOT/psource"
 PTRACE_DIR="$REPO_ROOT/ptrace"
-OUT_DIR="$REPO_ROOT/outputs/$DESIGN_NAME"
+OUT_BASE="$REPO_ROOT/outputs/$DESIGN_NAME"
 HOTSPOT="${HOTSPOT:-$REPO_ROOT/hotspot}"
-SAMPLING_INTVL=0.1
+SAMPLING_INTVL=0.001
 DECODE_COUNT=129
 
 if command -v python3 >/dev/null 2>&1; then
@@ -32,74 +31,78 @@ for file in "$EXCEL" "$DESIGN/example.lcf" "$DESIGN/example.config" "$DESIGN/exa
   fi
 done
 
-mkdir -p "$PTRACE_DIR" "$OUT_DIR"
-PTRACE_FILE="$PTRACE_DIR/$DESIGN_NAME.ptrace"
-TIME_FILE="$PTRACE_DIR/$DESIGN_NAME.time.tsv"
-UNITS_FILE="$PTRACE_DIR/$DESIGN_NAME.units.tsv"
+mkdir -p "$PTRACE_DIR" "$OUT_BASE"
+PREFILL_TRACE="$PTRACE_DIR/${DESIGN_NAME}_prefill.ptrace"
+DECODE_TRACE="$PTRACE_DIR/${DESIGN_NAME}_decode.ptrace"
+TIME_PREFIX="$PTRACE_DIR/${DESIGN_NAME}.time.tsv"
+UNITS_FILE="$PTRACE_DIR/${DESIGN_NAME}.units.tsv"
 
-echo "=== Generating $DESIGN_NAME trace from $(basename "$EXCEL") ==="
+echo "=== Generating stage traces from $(basename "$EXCEL") ==="
 "$PYTHON" "$SCRIPT_DIR/ptrace_gen.py" \
   --input-xlsx "$EXCEL" \
   --lcf "$DESIGN/example.lcf" \
   --output-dir "$PTRACE_DIR" \
+  --output-prefill "$PREFILL_TRACE" \
+  --output-decode "$DECODE_TRACE" \
+  --output-time "$TIME_PREFIX" \
   --sampling-intvl "$SAMPLING_INTVL" \
   --decode-count "$DECODE_COUNT"
-cp "$TIME_FILE" "$UNITS_FILE" "$OUT_DIR/"
 
-# Override config at runtime so trace generation and HotSpot use the same dt.
 GRID_ROWS="$(awk '$1 == "-grid_rows" {print $2}' "$DESIGN/example.config")"
 GRID_COLS="$(awk '$1 == "-grid_cols" {print $2}' "$DESIGN/example.config")"
 GRID_ROWS="${GRID_ROWS:-64}"
 GRID_COLS="${GRID_COLS:-64}"
 
-echo "=== Computing steady temperatures: $DESIGN_NAME ==="
-(
-  cd "$DESIGN"
-  "$HOTSPOT" -c example.config \
-    -p "$PTRACE_FILE" -grid_layer_file example.lcf \
-    -materials_file example.materials -model_type grid -detailed_3D on \
-    -sampling_intvl "$SAMPLING_INTVL" \
-    -steady_file "$OUT_DIR/example.steady" \
-    -grid_steady_file "$OUT_DIR/example.grid.steady"
-)
+run_stage() {
+  local stage="$1"
+  local trace="$2"
+  local time_file="$3"
+  local out_dir="$OUT_BASE/$stage"
+  mkdir -p "$out_dir"
+  cp "$time_file" "$UNITS_FILE" "$out_dir/"
 
-# Preserve the actual prefill-to-decode warm-up, starting at config init_temp.
-echo "=== Computing transient temperatures: $DESIGN_NAME ==="
-# HotSpot appends grid snapshots; start a new output on each run.
-: > "$OUT_DIR/example.grid.ttrace"
-(
-  cd "$DESIGN"
-  "$HOTSPOT" -c example.config \
-    -p "$PTRACE_FILE" -grid_layer_file example.lcf \
-    -materials_file example.materials -model_type grid -detailed_3D on \
-    -sampling_intvl "$SAMPLING_INTVL" -init_file '(null)' \
-    -o "$OUT_DIR/example.ttrace" \
-    -grid_transient_file "$OUT_DIR/example.grid.ttrace"
-)
+  echo "=== Running $stage transient: $(basename "$trace") ==="
+  # The two HotSpot invocations are independent and each starts at init_temp.
+  # HotSpot's transient trace file is append-only, so clear this stage's file.
+  : > "$out_dir/example.grid.ttrace"
+  (
+    cd "$DESIGN"
+    "$HOTSPOT" -c example.config \
+      -p "$trace" -grid_layer_file example.lcf \
+      -materials_file example.materials -model_type grid -detailed_3D on \
+      -sampling_intvl "$SAMPLING_INTVL" -init_file '(null)' \
+      -steady_file "$out_dir/example.steady" \
+      -grid_steady_file "$out_dir/example.grid.steady" \
+      -o "$out_dir/example.ttrace" \
+      -grid_transient_file "$out_dir/example.grid.ttrace"
+  )
 
-# Count actual grid output layers, including HotSpot's package layers.
-LAYER_COUNT="$(awk '$1 == "Layer" {n++} END {print n+0}' "$OUT_DIR/example.grid.steady")"
-if [[ "$LAYER_COUNT" -eq 0 ]]; then
-  echo "error: no Layer headers in grid steady output" >&2
-  exit 1
-fi
-"$PYTHON" "$SCRIPT_DIR/split_grid_steady.py" \
-  "$OUT_DIR/example.grid.steady" "$LAYER_COUNT" "$GRID_ROWS" "$GRID_COLS"
-
-# The generated unit map provides the ordered power layers and their FLPs.
-while IFS=$'\t' read -r layer flp; do
-  GRID_FILE="$OUT_DIR/example_layer${layer}.grid.steady"
-  if [[ "$flp" != /* && "$flp" != [A-Za-z]:* ]]; then
-    flp="$DESIGN/$flp"
+  local layer_count
+  layer_count="$(awk '$1 == "Layer" {n++} END {print n+0}' "$out_dir/example.grid.steady")"
+  if [[ "$layer_count" -eq 0 ]]; then
+    echo "error: no Layer headers in $out_dir/example.grid.steady" >&2
+    return 1
   fi
-  "$PYTHON" "$SCRIPT_DIR/grid_thermal_map.py" \
-    "$flp" "$GRID_FILE" "$GRID_ROWS" "$GRID_COLS" \
-    "$OUT_DIR/layer${layer}_$(basename "$flp" .flp).png"
-  if command -v perl >/dev/null 2>&1; then
-    perl "$SCRIPT_DIR/grid_thermal_map.pl" \
-      "$flp" "$GRID_FILE" "$GRID_ROWS" "$GRID_COLS" \
-      > "$OUT_DIR/layer${layer}_$(basename "$flp" .flp).svg"
-  fi
-done < <(awk -F '\t' 'NR > 1 && !seen[$2]++ {print $2 "\t" $3}' "$UNITS_FILE")
+  "$PYTHON" "$SCRIPT_DIR/split_grid_steady.py" \
+    "$out_dir/example.grid.steady" "$layer_count" "$GRID_ROWS" "$GRID_COLS"
 
-echo "=== Done. Trace: $PTRACE_FILE; results: $OUT_DIR ==="
+  while IFS=$'\t' read -r layer flp; do
+    local grid_file="$out_dir/example_layer${layer}.grid.steady"
+    if [[ "$flp" != /* && "$flp" != [A-Za-z]:* ]]; then
+      flp="$DESIGN/$flp"
+    fi
+    "$PYTHON" "$SCRIPT_DIR/grid_thermal_map.py" \
+      "$flp" "$grid_file" "$GRID_ROWS" "$GRID_COLS" \
+      "$out_dir/layer${layer}_$(basename "$flp" .flp).png"
+    if command -v perl >/dev/null 2>&1; then
+      perl "$SCRIPT_DIR/grid_thermal_map.pl" \
+        "$flp" "$grid_file" "$GRID_ROWS" "$GRID_COLS" \
+        > "$out_dir/layer${layer}_$(basename "$flp" .flp).svg"
+    fi
+  done < <(awk -F '\t' 'NR > 1 && !seen[$2]++ {print $2 "\t" $3}' "$UNITS_FILE")
+}
+
+run_stage prefill "$PREFILL_TRACE" "${TIME_PREFIX%.tsv}_prefill.tsv"
+run_stage decode "$DECODE_TRACE" "${TIME_PREFIX%.tsv}_decode.tsv"
+
+echo "=== Done. Stage outputs: $OUT_BASE/prefill and $OUT_BASE/decode ==="

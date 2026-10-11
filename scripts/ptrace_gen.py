@@ -2,7 +2,7 @@
 """Generate a HotSpot power trace from an Excel phase table.
 
 The input workbook contains one ``prefill`` row and one
-``decode_per_token`` row. Each phase is sampled at 0.1 seconds by default.
+``decode_per_token`` row. Each phase is sampled at 0.001 seconds by default.
 Prefill runs once. Decode duration is 129 times the per-token latency;
 each stage repeats its power row ceil(stage_duration / sampling_interval) times.
 
@@ -39,7 +39,7 @@ except ImportError as exc:  # pragma: no cover - depends on the caller's environ
 
 
 DEFAULT_DECODE_COUNT = 129
-DEFAULT_SAMPLING_INTERVAL = 0.1
+DEFAULT_SAMPLING_INTERVAL = 0.001
 
 
 @dataclass(frozen=True)
@@ -402,6 +402,26 @@ def write_time_trace(
             )
 
 
+def write_phase_ptrace(
+    path: Path, power_units: Sequence[PowerUnit], record: PhaseRecord,
+    rows: int,
+) -> None:
+    """Write one phase-only ptrace with a repeated constant power row."""
+    if rows <= 0:
+        raise ValueError(f"{record.phase}: phase must contain at least one sample")
+    unit_names = [unit.unit_name for unit in power_units]
+    powers = build_power_row(power_units, record)
+    if len(powers) != len(power_units):
+        raise ValueError(f"power row has {len(powers)} values, expected {len(power_units)}")
+    if any(not math.isfinite(float(value)) or float(value) < 0 for value in powers):
+        raise ValueError("power values must be finite and non-negative")
+    line = "\t".join(f"{value:.12g}" for value in powers) + "\n"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="\n") as stream:
+        stream.write("\t".join(unit_names) + "\n")
+        stream.write(line * rows)
+
+
 def write_units_manifest(path: Path, power_units: Sequence[PowerUnit]) -> None:
     """Write LCF layer and FLP identity for every ptrace power column."""
 
@@ -420,6 +440,8 @@ def generate_from_excel(
     output_ptrace: Path,
     output_time: Path,
     output_units: Path,
+    output_prefill: Optional[Path] = None,
+    output_decode: Optional[Path] = None,
     sheet_name: Optional[str] = None,
     decode_count: int = DEFAULT_DECODE_COUNT,
     sampling_interval: float = DEFAULT_SAMPLING_INTERVAL,
@@ -428,9 +450,24 @@ def generate_from_excel(
 
     records = read_excel_records(input_xlsx, sheet_name)
     power_units = read_lcf_power_units(lcf_path)
+    prefill_steps = math.ceil(records["prefill"].latency_s / sampling_interval)
+    decode_steps = math.ceil(records["decode_per_token"].latency_s * decode_count / sampling_interval)
     trace_records = expand_records(records, decode_count, sampling_interval)
-    write_ptrace(output_ptrace, power_units, trace_records)
-    write_time_trace(output_time, trace_records, sampling_interval)
+    if output_prefill is not None and output_decode is not None:
+        write_phase_ptrace(output_prefill, power_units, records["prefill"], prefill_steps)
+        write_phase_ptrace(output_decode, power_units, records["decode_per_token"], decode_steps)
+    else:
+        write_ptrace(output_ptrace, power_units, trace_records)
+    prefill_records = trace_records[:prefill_steps]
+    decode_records = trace_records[prefill_steps:]
+    write_time_trace(
+        output_time.with_name(output_time.stem + "_prefill.tsv"),
+        prefill_records, sampling_interval,
+    )
+    write_time_trace(
+        output_time.with_name(output_time.stem + "_decode.tsv"),
+        decode_records, sampling_interval,
+    )
     write_units_manifest(output_units, power_units)
     return len(power_units), len(trace_records)
 
@@ -474,6 +511,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         help="output ptrace path (default: <output-dir>/<lcf-directory-name>.ptrace)",
     )
     parser.add_argument(
+        "--output-prefill", type=Path, default=None,
+        help="prefill-only ptrace path (default: <output-dir>/<lcf-directory-name>_prefill.ptrace)",
+    )
+    parser.add_argument(
+        "--output-decode", type=Path, default=None,
+        help="decode-only ptrace path (default: <output-dir>/<lcf-directory-name>_decode.ptrace)",
+    )
+    parser.add_argument(
         "--output-time",
         type=Path,
         default=None,
@@ -493,7 +538,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     parser.add_argument(
         "--sampling-intvl", type=float, default=DEFAULT_SAMPLING_INTERVAL,
-        help="seconds per power row; must match HotSpot config (default: 0.1)",
+        help="seconds per power row; must match HotSpot config (default: 0.001)",
     )
     args = parser.parse_args(argv)
 
@@ -504,6 +549,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     stem = args.lcf.resolve().parent.name
     output_ptrace = args.output_ptrace or args.output_dir / f"{stem}.ptrace"
+    output_prefill = args.output_prefill or args.output_dir / f"{stem}_prefill.ptrace"
+    output_decode = args.output_decode or args.output_dir / f"{stem}_decode.ptrace"
     output_time = args.output_time or args.output_dir / f"{stem}.time.tsv"
     output_units = args.output_units or args.output_dir / f"{stem}.units.tsv"
 
@@ -514,6 +561,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             output_ptrace=output_ptrace,
             output_time=output_time,
             output_units=output_units,
+            output_prefill=output_prefill,
+            output_decode=output_decode,
             sheet_name=args.sheet,
             decode_count=args.decode_count,
             sampling_interval=args.sampling_intvl,
@@ -522,8 +571,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
-    print(f"wrote {output_ptrace} ({trace_count} power rows, {unit_count} units)")
-    print(f"wrote {output_time} ({trace_count} phase/time rows)")
+    print(f"wrote {output_prefill} (prefill ptrace, {unit_count} units)")
+    print(f"wrote {output_decode} (decode ptrace, {unit_count} units)")
+    print(f"wrote {output_time.with_name(output_time.stem + '_prefill.tsv')}")
+    print(f"wrote {output_time.with_name(output_time.stem + '_decode.tsv')}")
     print(f"wrote {output_units} ({unit_count} LCF-to-column mappings)")
     print(f"sampling interval: {args.sampling_intvl:g} s (must match HotSpot config)")
     return 0

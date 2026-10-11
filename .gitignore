@@ -1,0 +1,21 @@
+# Build products
+*.o
+*.d
+hotspot
+hotfloorplan
+libhotspot.a
+
+# Generated simulation data
+outputs/
+ptrace/
+scripts/__pycache__/
+*.ttrace
+*.grid.steady
+*.steady
+*.init
+
+# Local/editor files
+.eta_snapshot.json
+*.swp
+*~
+

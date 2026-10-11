@@ -1,0 +1,187 @@
+#Lines starting with # are used for commenting
+#Blank lines are also ignored
+
+#File Format:
+
+#<Layer Number>
+#<Lateral heat flow Y/N?>
+#<Power Dissipation Y/N?>
+#<Specific heat capacity in J/(m^3K)>
+#<Resistivity in (m-K)/W>
+#<Thickness in m>
+#<floorplan file>
+
+#Example
+
+#0
+#Y
+#Y
+#1.75e6
+#0.01
+#0.00015
+#ev6.flp.orig
+
+# Layer 0: NPU
+0
+Y
+Y
+1.75e6
+0.01
+5.5e-05
+NPU.flp
+
+# Layer 1: thermal interface material (TIM)
+1
+Y
+N
+4e6
+0.25
+2.0e-05
+NPU.flp
+
+# Layer 2: logic
+2
+Y
+Y
+1.75e6
+0.01
+5.5e-05
+logic.flp
+
+# Layer 3: thermal interface material (TIM)
+3
+Y
+N
+4e6
+0.25
+2.0e-05
+logic.flp
+
+# Layer 4: Flash
+4
+Y
+Y
+1.75e6
+0.01
+5.5e-05
+flash.flp
+
+# Layer 5: thermal interface material (TIM)
+5
+Y
+N
+4e6
+0.25
+2.0e-05
+flash.flp
+
+# Layer 6: logic
+6
+Y
+Y
+1.75e6
+0.01
+5.5e-05
+logic.flp
+
+# Layer 7: thermal interface material (TIM)
+7
+Y
+N
+4e6
+0.25
+2.0e-05
+logic.flp
+
+# Layer 8: Flash
+8
+Y
+Y
+1.75e6
+0.01
+5.5e-05
+flash.flp
+
+
+# Layer 9: thermal interface material (TIM)
+9
+Y
+N
+4e6
+0.25
+2.0e-05
+flash.flp
+
+# Layer 10: logic
+10
+Y
+Y
+1.75e6
+0.01
+5.5e-05
+logic.flp
+
+# Layer 11: thermal interface material (TIM)
+11
+Y
+N
+4e6
+0.25
+2.0e-05
+logic.flp
+
+# Layer 12: Flash
+12
+Y
+Y
+1.75e6
+0.01
+5.5e-05
+flash.flp
+
+
+# Layer 13: thermal interface material (TIM)
+13
+Y
+N
+4e6
+0.25
+2.0e-05
+flash.flp
+
+# Layer 14: logic
+14
+Y
+Y
+1.75e6
+0.01
+5.5e-05
+logic.flp
+
+# Layer 15: thermal interface material (TIM)
+15
+Y
+N
+4e6
+0.25
+2.0e-05
+logic.flp
+
+# Layer 16: Flash
+16
+Y
+Y
+1.75e6
+0.01
+5.5e-05
+flash.flp
+
+
+# Layer 17: thermal interface material (TIM)
+17
+Y
+N
+4e6
+0.25
+2.0e-05
+flash.flp

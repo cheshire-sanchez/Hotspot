@@ -4,7 +4,7 @@ set -euo pipefail
 # Usage: bash scripts/run.sh [design-directory] [Excel-file-in-psource]
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-DESIGN="${1:-$REPO_ROOT/HBFuse-2}"
+DESIGN="${1:-$REPO_ROOT/HBFuse-4}"
 DESIGN="$(cd "$DESIGN" && pwd)"
 DESIGN_NAME="$(basename "$DESIGN")"
 SOURCE_DIR="$REPO_ROOT/psource"
@@ -23,7 +23,7 @@ else
   exit 1
 fi
 
-EXCEL="$SOURCE_DIR/$(basename "${2:-W4_power_2.xlsx}")"
+EXCEL="$SOURCE_DIR/$(basename "${2:-W4_power_4.xlsx}")"
 for file in "$EXCEL" "$DESIGN/example.lcf" "$DESIGN/example.config" "$DESIGN/example.materials" "$HOTSPOT"; do
   if [[ ! -f "$file" ]]; then
     echo "error: file not found: $file" >&2

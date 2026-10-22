@@ -1,6 +1,6 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 
-import subprocess
+import os
 import sys
 
 usage = """
@@ -19,7 +19,11 @@ if len(sys.argv) != 5:
     sys.exit(0)
 
 grid_steady_file = sys.argv[1]
-grid_steady_prefix = grid_steady_file.split('.')[0]
+suffix = ".grid.steady"
+if grid_steady_file.endswith(suffix):
+    grid_steady_prefix = grid_steady_file[: -len(suffix)]
+else:
+    grid_steady_prefix = os.path.splitext(grid_steady_file)[0]
 num_layers = int(sys.argv[2])
 num_rows = int(sys.argv[3])
 num_cols = int(sys.argv[4])

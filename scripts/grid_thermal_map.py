@@ -1,8 +1,9 @@
-#! /usr/bin/python3
+#!/usr/bin/env python3
 
 import matplotlib.pyplot as plt
 import numpy as np
 import sys
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 usage = \
 """
@@ -65,10 +66,6 @@ with open(flp_filename, "r") as fp:
     x = float(parts[3])
     y = float(parts[4])
 
-    rectangle = plt.Rectangle((x, y), width, length, fc="none", ec="black")
-    axs.add_patch(rectangle)
-    plt.text(x, y, name)
-
     total_width = max(total_width, x + width)
     total_length = max(total_length, y + length)
 
@@ -79,24 +76,27 @@ with open(temperatures_filename, "r") as fp:
 
 temps = np.reshape(temps, (rows, cols))
 
-im = axs.imshow(temps, cmap='hot_r', extent=(0, total_width, 0, total_length))
+im = axs.imshow(
+  temps,
+  cmap='hot_r',
+  extent=(0, total_width, 0, total_length),
+  aspect='auto'
+)
 
 if min_temp is None and max_temp is None:
   im.set_clim(np.min(temps), np.max(temps))
 else:
   im.set_clim(min_temp, max_temp)
 
-cbar = fig.colorbar(im, ax=axs)
+divider = make_axes_locatable(axs)
+cax = divider.append_axes("right", size="5%", pad=0.05)
+cbar = fig.colorbar(im, cax=cax)
 
 axs.set_title(f"Heat Map\nMaximum Temperature = {np.max(temps)}")
 
-axs.set_xticks([n for n in np.linspace(0, total_width, 5)])
-axs.set_xticklabels([n*(10**3) for n in np.linspace(0, total_width, 5)])
-axs.set_xlabel("Horizontal Position (mm)")
+axs.set_xticks([])
+axs.set_yticks([])
+axs.set_xlabel("")
+axs.set_ylabel("")
 
-axs.set_yticks([n for n in np.linspace(0, total_length, 5)])
-axs.set_yticklabels([n*(10**3) for n in np.linspace(0, total_length, 5)])
-axs.set_ylabel("Vertical Position (mm)")
-
-plt.axis('scaled')
 plt.savefig(output_filename)

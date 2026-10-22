@@ -8,6 +8,7 @@ libhotspot.a
 # Generated simulation data
 outputs/
 ptrace/
+build/
 scripts/__pycache__/
 *.ttrace
 *.grid.steady

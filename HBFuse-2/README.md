@@ -1,16 +1,18 @@
-# HBFuse-2 HotSpot run
+# HotSpot workloads
 
-This design uses `example.lcf` to define the stacked layers and power-column order.
-The trace generator reads an Excel phase table and writes the generated trace under
-the repository `ptrace/` directory. The default source is `psource/W4_power_2.xlsx`.
+`HBFuse-4/example.lcf` defines the current stacked design and power-column order.
+The trace generator reads `psource/W4_power_4.xlsx` and writes separate prefill and
+decode traces under `ptrace/`.
 
-From the repository root, run in Linux or WSL:
+On Windows, install MinGW-w64 GCC and Python with `openpyxl`, `numpy`, and
+`matplotlib`. From PowerShell at the repository root, run:
 
-```bash
-python3 -m pip install openpyxl
-bash scripts/run.sh HBFuse-2 W4_power_2.xlsx
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\scripts\run.ps1
 ```
 
-The script uses the sampling interval in `HBFuse-2/example.config` (`0.1` seconds),
-and passes the same value to HotSpot. Generated simulation outputs are kept under
-`outputs/HBFuse-2/` and are ignored by Git.
+The script builds `build/windows/hotspot.exe` when needed. It uses the 0.001-second
+sampling interval from `HBFuse-4/example.config` and writes prefill and decode
+results to separate directories under `outputs/HBFuse-4/`. Build products and
+generated simulation data are ignored by Git.
